@@ -107,11 +107,9 @@ module.exports = function ( app, bot, UserModel, OWNER_ID, BotModel, botUsername
   const OwnerInfo = `
   <b>🌟 Oᴡɴᴇʀ Dᴇᴛᴀɪʟs 🌟</b>
   
-  <b>🧑‍💻 Nᴀᴍᴇ:</b> Shivam Kumar
+  <b>🧑‍💻 Nᴀᴍᴇ:</b> <b>Your Smile</b>
   
-  <b>📱 Tɢ Uѕᴇʀɴᴀᴍᴇ:</b> <b>@ShivamNox</b> 
-  
-  <b>🌐 Pᴏʀtғᴏʟɪᴏ:</b> <b><a href="https://shivamnox.github.io">shivamnox.github.io</a></b> 
+  <b>📱 Tɢ Uѕᴇʀɴᴀᴍᴇ:</b> <b>@crunchyroll_hindi_dub_yt</b> 
   
   <b>✨ Cᴏɴnᴇᴄᴛ tᴏ mᴏʀᴇ cʀᴇᴀᴛɪvᴇ jᴏᴜʀɴᴇʏ✨</b> 
   `;
@@ -129,12 +127,12 @@ module.exports = function ( app, bot, UserModel, OWNER_ID, BotModel, botUsername
   `;
   const aboutMessage = `
   <blockquote><b>🎥 Mʏ Nᴀᴍᴇ: <a href='https://t.me/${botUsername}'>File-Store-Bot</a></b></blockquote>
-  <blockquote><b>👨‍💻 Cʀᴇᴀᴛᴏʀ: <a href='https://t.me/ShivamNox'>@ShivamNox</a></b></blockquote>
-  <blockquote><b>📚 Lɪʙʀᴀʀʏ: <a href='https://t.me/shivamnox0'>Node</a></b></blockquote>
-  <blockquote><b>💻 Lᴀɴɢᴜᴀɢᴇ: <a href='https://t.me/shivamnox0'>NodeJS</a></b></blockquote>
+  <blockquote><b>👨‍💻 Cʀᴇᴀᴛᴏʀ: <a href='YOUR SMILE'>@crunchyroll_hindi_dub_yt</a></b></blockquote>
+  <blockquote><b>📚 Lɪʙʀᴀʀʏ: <a href=''>Node</a></b></blockquote>
+  <blockquote><b>💻 Lᴀɴɢᴜᴀɢᴇ: <a href=''>NodeJS</a></b></blockquote>
   <blockquote><b>🗄️ Dᴀᴛᴀʙᴀsᴇ: <a href='https://mongodb.com'>MongoDB</a></b></blockquote>
-  <blockquote><b>💾 Bᴏᴛ Sᴇʀᴠᴇʀ: <a href='https://shivamnox.github.io'>Hivabytes</a></b></blockquote>
-  <blockquote><b>🔧 Bᴜɪʟᴅ Sᴛᴀᴛᴜs: <a href='https://hivabytes'>3.6.7</a></b></blockquote>
+  <blockquote><b>💾 Bᴏᴛ Sᴇʀᴠᴇʀ: <a href='@crunchyroll_hindi_dub_yt'>Smile</a></b></blockquote>
+  <blockquote><b>🔧 Bᴜɪʟᴅ Sᴛᴀᴛᴜs: <a href='https://t.me/crunchyroll_hindi_dub_yt'>3.6.7</a></b></blockquote>
   `;
 
   const legalText = `
@@ -152,8 +150,8 @@ module.exports = function ( app, bot, UserModel, OWNER_ID, BotModel, botUsername
   
   🛡️ By using this bot, you agree to take full responsibility for the content you upload. The developer is not liable for any misuse.
   
-  👨‍💻 Developer: @ShivamNox
-  🔗 Channel: https://t.me/shivamnox0
+  👨‍💻 Developer: <b>Your Smile</b>
+  🔗 Channel: https://t.me/crunchyroll_hindi_dub_yt
   
   Use responsibly and ethically. ✨
   `;
