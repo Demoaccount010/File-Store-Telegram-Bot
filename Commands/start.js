@@ -1,266 +1,246 @@
-module.exports = function ( app, bot, UserModel, OWNER_ID, BotModel, botUsername, START_IMAGE_URL, FileModel, BatchModel ) {
-  // Enhanced /start command with greeting, info, and buttons
+module.exports = function (
+  app,
+  bot,
+  UserModel,
+  OWNER_ID,
+  BotModel,
+  botUsername,
+  START_IMAGE_URL,
+  FileModel,
+  BatchModel
+) {
+  // ========================== /start COMMAND ==============================
   bot.onText(/\/start(.*)/, async (msg, match) => {
-    const telegramId = msg.from.id;
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
     const firstName = msg.from.first_name;
 
-    const botData = await BotModel.findOne();
+    let botData = await BotModel.findOne();
+    if (!botData) {
+      botData = await BotModel.create({
+        autodel: "disable",
+        forcesub: "disable",
+        forceChannels: [],
+      });
+    }
 
-    const payload = match[1].trim(); // Extracting any start payload (remove any surrounding spaces)
+    const payload = match[1].trim().replace("?start=", "").replace("start=", "");
 
+    // ===================== FORCE SUB FIRST CHECK =====================
+    if (Number(userId) !== Number(OWNER_ID)) {
+      if (botData.forcesub === "enable" && botData.forceChannels.length > 0) {
+        for (let ch of botData.forceChannels) {
+          if (!ch.startsWith("@")) ch = "@" + ch;
+
+          try {
+            const member = await bot.getChatMember(ch, userId);
+
+            if (member.status === "left" || member.status === "kicked") {
+              return bot.sendMessage(chatId, "⚠️ Please join required channels:", {
+                reply_markup: {
+                  inline_keyboard: [
+                    ...botData.forceChannels.map((c) => [
+                      {
+                        text: `${c}`,
+                        url: `https://t.me/${c.replace("@", "")}`,
+                      },
+                    ]),
+                    [{ text: "I Joined ✔️", callback_data: "check_force" }],
+                  ],
+                },
+              });
+            }
+          } catch (err) {}
+        }
+      }
+    }
+
+    // ===================== PAYLOAD HANDLING (FILE/BATCH) =====================
     if (payload) {
-      // If there's a payload, try to fetch file or batch data
       const fileData =
         (await FileModel.findOne({ uniqueId: payload })) ||
         (await BatchModel.findOne({ batchId: payload }));
 
-      if (fileData) {
-        if (fileData.fileId) {
-          if (fileData.type === "photo") {
-            const sentMessage = await bot.sendPhoto(
-              msg.chat.id,
-              fileData.fileId,
-              {
-                caption: fileData.caption || fileData.fileName,
-              }
-            );
-            return;
-          }
-          // Send a single file
-          const sentMessage = await bot.sendDocument(
-            msg.chat.id,
-            fileData.fileId,
-            {
-              caption: fileData.caption || fileData.fileName,
-            }
-          );
+      if (!fileData) {
+        return bot.sendMessage(chatId, "❌ Invalid or expired link.");
+      }
 
-          if (botData.autodel === "disable") return;
+      // ========== SINGLE FILE ==========
+      if (fileData.fileId) {
+        let sentMessage;
 
-          // Send a message about deletion and set a timeout to delete the message
+        if (fileData.type === "photo") {
+          sentMessage = await bot.sendPhoto(chatId, fileData.fileId, {
+            caption: fileData.caption || fileData.fileName,
+          });
+        } else if (fileData.type === "video") {
+          sentMessage = await bot.sendVideo(chatId, fileData.fileId, {
+            caption: fileData.caption || fileData.fileName,
+          });
+        } else if (fileData.type === "audio") {
+          sentMessage = await bot.sendAudio(chatId, fileData.fileId, {
+            caption: fileData.caption || fileData.fileName,
+          });
+        } else {
+          sentMessage = await bot.sendDocument(chatId, fileData.fileId, {
+            caption: fileData.caption || fileData.fileName,
+          });
+        }
+
+        if (botData.autodel === "enable") {
           bot.sendMessage(
-            msg.chat.id,
-            "🚨 Note: \n\nThis media message will be deleted after 10 minutes. Please save or forward it to your personal saved messages to avoid losing it!"
+            chatId,
+            "⚠️ Note: This file will be deleted after 10 minutes. Save it now!"
           );
 
           setTimeout(() => {
-            bot
-              .deleteMessage(msg.chat.id, sentMessage.message_id)
-              .catch((err) => {
-                console.error("Failed to delete message:", err);
-              });
-          }, 600000); // 10 minutes
-        } else if (fileData.files) {
-          const sentMessages = [];
-
-          for (const file of fileData.files) {
-            const sentMsg = await bot.sendDocument(msg.chat.id, file.fileId, {
-              caption: file.caption || file.fileName,
-            });
-            sentMessages.push(sentMsg.message_id);
-            // Wait 1.5 seconds before sending the next file, except after the last one
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          }
-
-          bot.sendMessage(msg.chat.id, "successfully Sent all Files of Batch.");
-
-          if (botData.autodel !== "disable") {
-            bot.sendMessage(
-              msg.chat.id,
-              "🚨 Note: \n\nThese media messages will be deleted after 10 minutes. Please save or forward them to your personal saved messages to avoid losing them!"
-            );
-
-            // Delete all messages after 10 minutes
-            setTimeout(() => {
-              sentMessages.forEach((messageId) => {
-                bot.deleteMessage(msg.chat.id, messageId).catch((err) => {
-                  console.error("Failed to delete message:", err);
-                });
-              });
-            }, 600000); // 10 minutes
-          }
+            bot.deleteMessage(chatId, sentMessage.message_id).catch(() => {});
+          }, 600000);
         }
-      } else {
-        bot.sendMessage(msg.chat.id, "Invalid or expired link.");
+
+        return;
       }
-    } else {
-      // If no payload, send the welcome message with inline buttons
-      await bot.sendPhoto(msg.chat.id, START_IMAGE_URL, {
-        caption: `Hello, ${firstName}! 👋\n\nWelcome to the bot. Here you can upload files or create batches of files to share later.\n\nJust Send Me Any File and Get Share link:`,
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "Help", callback_data: "help" },
-              { text: "About", callback_data: "about" },
-            ],
-            [
-              { text: "Developer Info", callback_data: "OwnerInfo" },
-              { text: "Legal Disclaimer", callback_data: "legal" },
-            ],
-            [{ text: "Update Channel", url: "https://t.me/hivabyte" }],
-          ],
-        },
-      });
+
+      // ========== BATCH FILES ==========
+      if (fileData.files && fileData.files.length > 0) {
+        let msgIds = [];
+
+        for (const f of fileData.files) {
+          const sent = await bot.sendDocument(chatId, f.fileId, {
+            caption: f.caption || f.fileName,
+          });
+          msgIds.push(sent.message_id);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+
+        bot.sendMessage(chatId, "📦 All batch files sent successfully.");
+
+        if (botData.autodel === "enable") {
+          bot.sendMessage(chatId, "⚠️ These files will be auto-deleted in 10 minutes.");
+
+          setTimeout(() => {
+            msgIds.forEach((id) =>
+              bot.deleteMessage(chatId, id).catch(() => {})
+            );
+          }, 600000);
+        }
+
+        return;
+      }
     }
+
+    // ===================== DEFAULT START MENU =====================
+    await bot.sendPhoto(chatId, START_IMAGE_URL, {
+      caption: `Hello, ${firstName}! 👋\n\nWelcome to the bot.\n\nSend me any file to get a share link.`,
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "Help", callback_data: "help" },
+            { text: "About", callback_data: "about" },
+          ],
+          [
+            { text: "Developer Info", callback_data: "OwnerInfo" },
+            { text: "Legal Disclaimer", callback_data: "legal" },
+          ],
+          [{ text: "Update Channel", url: "https://t.me/crunchyroll_hindi_dub_yt" }],
+        ],
+      },
+      parse_mode: "HTML",
+    });
   });
 
+  // ========================== CALLBACK BUTTONS ==========================
   const OwnerInfo = `
-  <b>🌟 Oᴡɴᴇʀ Dᴇᴛᴀɪʟs 🌟</b>
-  
-  <b>🧑‍💻 Nᴀᴍᴇ:</b> <b>Your Smile</b>
-  
-  <b>📱 Tɢ Uѕᴇʀɴᴀᴍᴇ:</b> <b>@crunchyroll_hindi_dub_yt</b> 
-  
-  <b>✨ Cᴏɴnᴇᴄᴛ tᴏ mᴏʀᴇ cʀᴇᴀᴛɪvᴇ jᴏᴜʀɴᴇʏ✨</b> 
+<b>🌟 Owner Details 🌟</b>
+
+<b>🧑‍💻 Name:</b> Your Smile
+<b>📱 Telegram:</b> @crunchyroll_hindi_dub_yt
   `;
+
   const help = `
-  <b>> Help Menu</b>
-  
-  I am a permanent file store bot. you can store files from your public channel without i am admin in there.
-      
-  <b>> Available Commands:</b>
-  ~ /start - check i am alive.
-  ~ /batch - To store multiple files in a single link.
-  ~ /finishbatch - To stop the batch.
-  ~ /users - To View the all Users.
-  ~ /broadcast - Broadcast a messages to users.
+<b>> Help Menu</b>
+
+I am a permanent file store bot. You can store files publicly.
+
+<b>> Commands:</b>
+/start - Check bot
+/batch - Create batch
+/finishbatch - Finish batch
+/users - View user count
+/broadcast - Broadcast message
   `;
+
   const aboutMessage = `
-  <blockquote><b>🎥 Mʏ Nᴀᴍᴇ: <a href='https://t.me/${botUsername}'>File-Store-Bot</a></b></blockquote>
-  <blockquote><b>👨‍💻 Cʀᴇᴀᴛᴏʀ: <a href='YOUR SMILE'>@crunchyroll_hindi_dub_yt</a></b></blockquote>
-  <blockquote><b>📚 Lɪʙʀᴀʀʏ: <a href=''>Node</a></b></blockquote>
-  <blockquote><b>💻 Lᴀɴɢᴜᴀɢᴇ: <a href=''>NodeJS</a></b></blockquote>
-  <blockquote><b>🗄️ Dᴀᴛᴀʙᴀsᴇ: <a href='https://mongodb.com'>MongoDB</a></b></blockquote>
-  <blockquote><b>💾 Bᴏᴛ Sᴇʀᴠᴇʀ: <a href='@crunchyroll_hindi_dub_yt'>Smile</a></b></blockquote>
-  <blockquote><b>🔧 Bᴜɪʟᴅ Sᴛᴀᴛᴜs: <a href='https://t.me/crunchyroll_hindi_dub_yt'>3.6.7</a></b></blockquote>
+<b>🎥 My Name:</b> @${botUsername}
+<b>Creator:</b> @crunchyroll_hindi_dub_yt
+<b>Language:</b> NodeJS
+<b>Database:</b> MongoDB
   `;
 
   const legalText = `
-  <b>📜 Legal Disclaimer</b>
-  
-  This bot is created solely for <b>educational</b> and <b>personal file storage</b> purposes.
-  
-  📁 You may use this bot to:
-  - Store and retrieve your own documents, videos, or media files.
-  - Share educational content with others using secure file links.
-  
-  🚫 <b>Prohibited Uses:</b>
-  - Uploading or sharing copyrighted, illegal, or harmful content.
-  - Using the bot for piracy, harassment, or spreading misinformation.
-  
-  🛡️ By using this bot, you agree to take full responsibility for the content you upload. The developer is not liable for any misuse.
-  
-  👨‍💻 Developer: <b>Your Smile</b>
-  🔗 Channel: https://t.me/crunchyroll_hindi_dub_yt
-  
-  Use responsibly and ethically. ✨
+<b>📜 Legal Disclaimer</b>
+This bot is for educational use only.
+Do not upload copyrighted or illegal content.
+You are responsible for your uploads.
   `;
 
-  // Handle callback query for Developer Info
   bot.on("callback_query", (query) => {
-    const firstName = query.from.first_name;
-    const messageId = query.message.message_id;
     const chatId = query.message.chat.id;
-    // Check if the callback data is 'developer_info'
+    const mid = query.message.message_id;
+    const fname = query.from.first_name;
+
+    const backButtons = {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "Help", callback_data: "help" },
+            { text: "About", callback_data: "about" },
+          ],
+          [
+            { text: "Developer Info", callback_data: "OwnerInfo" },
+            { text: "Legal Disclaimer", callback_data: "legal" },
+          ],
+          [{ text: "Update Channel", url: "https://t.me/crunchyroll_hindi_dub_yt" }],
+        ],
+      },
+    };
+
     if (query.data === "OwnerInfo") {
-      // Edit the message to show the About message along with the new image
-      bot.editMessageMedia(
-        {
-          type: "photo",
-          media: START_IMAGE_URL,
-          caption: OwnerInfo, // The updated caption with the About information
-          parse_mode: "HTML",
-        },
-        {
-          chat_id: chatId,
-          message_id: messageId,
-          reply_markup: {
-            inline_keyboard: [[{ text: "⬅️ Bᴀᴄᴋ", callback_data: "back" }]],
-          },
-        }
+      return bot.editMessageMedia(
+        { type: "photo", media: START_IMAGE_URL, caption: OwnerInfo, parse_mode: "HTML" },
+        { chat_id: chatId, message_id: mid, ...backButtons }
       );
     }
+
     if (query.data === "help") {
-      // Edit the message to show the About message along with the new image
-      bot.editMessageMedia(
-        {
-          type: "photo",
-          media: START_IMAGE_URL,
-          caption: help, // The updated caption with the About information
-          parse_mode: "HTML",
-        },
-        {
-          chat_id: chatId,
-          message_id: messageId,
-          reply_markup: {
-            inline_keyboard: [[{ text: "⬅️ Bᴀᴄᴋ", callback_data: "back" }]],
-          },
-        }
+      return bot.editMessageMedia(
+        { type: "photo", media: START_IMAGE_URL, caption: help, parse_mode: "HTML" },
+        { chat_id: chatId, message_id: mid, ...backButtons }
       );
     }
+
     if (query.data === "about") {
-      // Edit the message to show the About message along with the new image
-      bot.editMessageMedia(
-        {
-          type: "photo",
-          media: START_IMAGE_URL,
-          caption: aboutMessage, // The updated caption with the About information
-          parse_mode: "HTML",
-        },
-        {
-          chat_id: chatId,
-          message_id: messageId,
-          reply_markup: {
-            inline_keyboard: [[{ text: "⬅️ Bᴀᴄᴋ", callback_data: "back" }]],
-          },
-        }
+      return bot.editMessageMedia(
+        { type: "photo", media: START_IMAGE_URL, caption: aboutMessage, parse_mode: "HTML" },
+        { chat_id: chatId, message_id: mid, ...backButtons }
       );
     }
+
     if (query.data === "legal") {
-      // Edit the message to show the About message along with the new image
-      bot.editMessageMedia(
-        {
-          type: "photo",
-          media: START_IMAGE_URL,
-          caption: legalText, // The updated caption with the About information
-          parse_mode: "HTML",
-        },
-        {
-          chat_id: chatId,
-          message_id: messageId,
-          reply_markup: {
-            inline_keyboard: [[{ text: "⬅️ Bᴀᴄᴋ", callback_data: "back" }]],
-          },
-        }
+      return bot.editMessageMedia(
+        { type: "photo", media: START_IMAGE_URL, caption: legalText, parse_mode: "HTML" },
+        { chat_id: chatId, message_id: mid, ...backButtons }
       );
     }
 
     if (query.data === "back") {
-      // Revert back to the original greeting image and message
-      bot.editMessageMedia(
+      return bot.editMessageMedia(
         {
           type: "photo",
-          media: START_IMAGE_URL, // The same image as the original one
-          caption: `Hello, ${firstName}! 👋\n\nWelcome to the bot. Here you can upload files or create batches of files to share later.\n\nJust Send Me Any File and Get Share link:`, // The original greeting caption
-          parse_mode: "HTML",
+          media: START_IMAGE_URL,
+          caption: `Hello, ${fname}! 👋\n\nSend me any file to get share link.`,
         },
-        {
-          chat_id: chatId,
-          message_id: messageId,
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "Help", callback_data: "help" },
-                { text: "About", callback_data: "about" },
-              ],
-              [
-                { text: "Developer Info", callback_data: "OwnerInfo" },
-                { text: "Legal Disclaimer", callback_data: "legal" },
-              ],
-              [{ text: "Update Channel", url: "https://t.me/hivabyte" }],
-            ],
-          },
-        }
+        { chat_id: chatId, message_id: mid, ...backButtons }
       );
     }
   });
