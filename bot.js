@@ -22,9 +22,11 @@ const userSchema = new mongoose.Schema({
 
 const UserModel = mongoose.model("User", userSchema);
 
-// bot data schame
+// bot data schema (UPDATED: added forcesub + forceChannels)
 const botSchema = new mongoose.Schema({
   autodel: { type: String, default: "disable" },
+  forcesub: { type: String, default: "disable" }, // NEW
+  forceChannels: { type: [String], default: [] }, // NEW
 });
 
 const BotModel = mongoose.model("BotModel", botSchema);
@@ -60,8 +62,9 @@ let currentBatchId = null;
 let broadcastMessage = null;
 let broadcastType = null;
 
-// Helper function to check if the user is the owner
-const isOwner = (userId) => userId === OWNER_ID;
+// Helper function to check if the user is the owner (numeric compare)
+const isOwner = (userId) => Number(userId) === Number(OWNER_ID);
+
 // Get bot information asynchronously
 bot
   .getMe()
@@ -81,25 +84,90 @@ bot
       { command: "legal", description: "Legal disclaimer & usage terms" },
     ]);
 
-    // Middleware to track users
+    // ========== FINAL MERGED MESSAGE HANDLER (USER TRACKING + FORCE SUB) ==========
+    // Replaces previous separate message handlers to avoid duplicate listeners.
     bot.on("message", async (msg) => {
-      if (msg.from) {
+      // basic guards
+      if (!msg || !msg.from) return;
+      const userId = msg.from.id;
+      const chatId = msg.chat && msg.chat.id ? msg.chat.id : userId;
+
+      // -------------------- USER TRACKING --------------------
+      try {
         const { id: telegramId, first_name: firstName, username } = msg.from;
-        const user = await UserModel.findOne({ telegramId });
+        let user = await UserModel.findOne({ telegramId });
 
         if (!user) {
-          // If the user is not found, create a new user record
-          await new UserModel({ telegramId, firstName, username }).save();
+          user = new UserModel({ telegramId, firstName, username });
+          await user.save();
         } else {
-          // If the user exists, update the last interaction timestamp and status
           user.lastInteraction = Date.now();
           user.status = "active";
           await user.save();
         }
+      } catch (e) {
+        console.log("User tracking error:", e);
+      }
+
+      // OWNER skip for force-sub checks (owner should not be blocked)
+      if (Number(userId) === Number(OWNER_ID)) return;
+
+      // -------------------- FORCE SUB CHECK --------------------
+      try {
+        // load or create botData (safe)
+        let botData = await BotModel.findOne();
+        if (!botData) {
+          botData = await BotModel.create({
+            autodel: "disable",
+            forcesub: "disable",
+            forceChannels: [],
+          });
+        }
+
+        // if forcesub not enabled -> just continue (do not block)
+        if (botData.forcesub !== "enable") return;
+
+        // if no channels configured -> don't block (owner probably forgot to add channels)
+        if (!botData.forceChannels || botData.forceChannels.length === 0) return;
+
+        // Check membership for each channel; if any channel not joined -> prompt and stop further processing
+        for (const channel of botData.forceChannels) {
+          try {
+            // ensure channel string starts with @ when calling getChatMember
+            const channelForApi = channel.startsWith("@") ? channel : `@${channel}`;
+            const member = await bot.getChatMember(channelForApi, userId);
+
+            if (member.status === "left" || member.status === "kicked") {
+              // prompt user to join all channels; show buttons for each channel + an "I Joined" button
+              return bot.sendMessage(chatId, "⚠️ Please join required channels to continue!", {
+                reply_markup: {
+                  inline_keyboard: [
+                    ...botData.forceChannels.map((ch) => [
+                      {
+                        text: `Join ${ch.startsWith("@") ? ch : "@" + ch}`,
+                        url: `https://t.me/${(ch.startsWith("@") ? ch.slice(1) : ch)}`,
+                      },
+                    ]),
+                    [{ text: "I Joined ✔️", callback_data: "check_force" }],
+                  ],
+                },
+              });
+            }
+          } catch (errInner) {
+            // If getChatMember fails (invalid channel, bot not admin, etc.), log but continue to next channel
+            console.log("Force-sub check error (channel):", channel, errInner && errInner.response ? errInner.response.body : errInner);
+            // If channel is invalid, skip checking it (owner should remove it)
+            continue;
+          }
+        }
+
+        // if all channels OK -> allow normal flow (no return)
+      } catch (err) {
+        console.log("Force-sub main error:", err);
       }
     });
 
-    // Function to delete the message from user's chat after a specified timeout
+    // Function to delete the message from user's chat after a specified timeout (kept as comment)
     /*    const deleteMessageAfterTimeout = async (chatId, messageId, timeout) => {
       setTimeout(async () => {
         try {
@@ -167,7 +235,7 @@ bot
       }
     });
 
-    // Handle document uploads
+    // Handle photos
     bot.on("photo", async (msg) => {
       const photoSizes = msg.photo;
       const largestPhoto = photoSizes[photoSizes.length - 1]; // choose highest resolution photo
@@ -402,6 +470,111 @@ bot
       );
     });
 
+    // ========== MULTIPLE FORCE SUBSCRIBE COMMAND ==========
+    bot.onText(/\/forcesub (.+)/, async (msg, match) => {
+      const chatId = msg.chat.id;
+      const userId = msg.from.id;
+
+      if (userId != Number(OWNER_ID)) {
+        return bot.sendMessage(chatId, "❌ Only owner can use this command.");
+      }
+
+      const args = match[1].split(" ");
+      const action = args[0]?.toLowerCase();
+      let value = args.slice(1).join(" ").trim(); // support channel names with spaces if any
+
+      let botData = await BotModel.findOne();
+      if (!botData) {
+        botData = await BotModel.create({
+          autodel: "disable",
+          forcesub: "disable",
+          forceChannels: [],
+        });
+      }
+
+      if (action === "enable") {
+        botData.forcesub = "enable";
+        await botData.save();
+        return bot.sendMessage(chatId, "✅ Force Subscribe ENABLED.");
+      }
+
+      if (action === "disable") {
+        botData.forcesub = "disable";
+        await botData.save();
+        return bot.sendMessage(chatId, "❌ Force Subscribe DISABLED.");
+      }
+
+      if (action === "add") {
+        if (!value) return bot.sendMessage(chatId, "Use: /forcesub add @channel");
+
+        // normalize: ensure starts with @
+        if (!value.startsWith("@")) value = "@" + value;
+
+        botData.forceChannels.push(value);
+        botData.forceChannels = [...new Set(botData.forceChannels)];
+        await botData.save();
+
+        return bot.sendMessage(chatId, `➕ Added: ${value}`);
+      }
+
+      if (action === "remove") {
+        if (!value) return bot.sendMessage(chatId, "Use: /forcesub remove @channel");
+
+        if (!value.startsWith("@")) value = "@" + value;
+
+        botData.forceChannels = botData.forceChannels.filter((ch) => ch !== value);
+        await botData.save();
+
+        return bot.sendMessage(chatId, `➖ Removed: ${value}`);
+      }
+
+      if (action === "list") {
+        if (!botData.forceChannels || botData.forceChannels.length === 0) {
+          return bot.sendMessage(chatId, "No forced channels added.");
+        }
+
+        return bot.sendMessage(chatId, "📌 Current Forced Channels:\n" + botData.forceChannels.join("\n"));
+      }
+
+      return bot.sendMessage(
+        chatId,
+        "❗ Wrong Format\nUse:\n/forcesub enable\n/forcesub disable\n/forcesub add @channel\n/forcesub remove @channel\n/forcesub list"
+      );
+    });
+
+    // ========== CALLBACK CHECK FOR "I Joined" BUTTON ==========
+    bot.on("callback_query", async (query) => {
+      try {
+        if (query.data === "check_force") {
+          const userId = query.from.id;
+          const botData = await BotModel.findOne();
+          if (!botData || !botData.forceChannels || botData.forceChannels.length === 0) {
+            return bot.answerCallbackQuery(query.id, { text: "No channels configured.", show_alert: true });
+          }
+
+          for (const channel of botData.forceChannels) {
+            try {
+              const channelForApi = channel.startsWith("@") ? channel : `@${channel}`;
+              const member = await bot.getChatMember(channelForApi, userId);
+
+              if (member.status === "left" || member.status === "kicked") {
+                return bot.answerCallbackQuery(query.id, { text: `❗ Please join ${channel}`, show_alert: true });
+              }
+            } catch (err) {
+              console.log("Callback check error:", err);
+              // if channel invalid or error, inform user to check with owner
+              return bot.answerCallbackQuery(query.id, { text: `Error checking ${channel}. Contact owner.`, show_alert: true });
+            }
+          }
+
+          return bot.answerCallbackQuery(query.id, { text: "✔ Verified!" });
+        }
+      } catch (e) {
+        console.log("callback_query handler error:", e);
+      }
+    });
+
+    // Load remaining commands (unchanged)
     require("./Commands/commands.js")(
       app,
       bot,
@@ -413,6 +586,7 @@ bot
       FileModel,
       BatchModel
     );
+
     // Express server for webhook or other purposes
     app.listen(3000, () => {
       console.log("Bot is Running");
