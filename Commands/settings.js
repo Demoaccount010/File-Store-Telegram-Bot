@@ -1,38 +1,50 @@
-// Commands/Settings.js
 module.exports = async function (app, bot, UserModel, OWNER_ID, BotModel) {
-
-  // ensure botData exists
   let botData = await BotModel.findOne();
   if (!botData) {
-    botData = await BotModel.create({ autodel: "disable", forcesub: "disable", forceChannels: [] });
+    botData = await BotModel.create({
+      autodel: "disable",
+      forcesub: "disable",
+      forceChannels: [],
+    });
   }
 
   bot.onText(/\/settings/, async (msg) => {
     const chatId = msg.chat.id;
     if (chatId != Number(OWNER_ID)) return;
 
-    // Refresh botData before showing (in case changed)
     botData = await BotModel.findOne();
 
-    bot.sendMessage(chatId, "Your Bot Settings", {
+    bot.sendMessage(chatId, "⚙️ Bot Settings", {
       reply_markup: {
         inline_keyboard: [
           [
             {
-              text: botData.autodel === "disable" ? "Enable Auto Delete" : "Disable Auto Delete",
-              callback_data: botData.autodel === "disable" ? "enable_auto_del" : "disable_auto_del",
+              text:
+                botData.autodel === "disable"
+                  ? "Enable Auto Delete"
+                  : "Disable Auto Delete",
+              callback_data:
+                botData.autodel === "disable"
+                  ? "enable_auto_del"
+                  : "disable_auto_del",
             },
           ],
           [
             {
-              text: botData.forcesub === "disable" ? "Enable Force Sub" : "Disable Force Sub",
-              callback_data: botData.forcesub === "disable" ? "enable_force" : "disable_force",
+              text:
+                botData.forcesub === "disable"
+                  ? "Enable ForceSub"
+                  : "Disable ForceSub",
+              callback_data:
+                botData.forcesub === "disable"
+                  ? "enable_force"
+                  : "disable_force",
             },
           ],
           [
             {
-              text: "Manage Force Channels",
-              callback_data: "manage_force_channels",
+              text: "Manage Channels",
+              callback_data: "manage_channels",
             },
           ],
         ],
@@ -40,45 +52,43 @@ module.exports = async function (app, bot, UserModel, OWNER_ID, BotModel) {
     });
   });
 
-  bot.on("callback_query", async (sq) => {
-    try {
-      // refresh
-      botData = await BotModel.findOne();
+  bot.on("callback_query", async (q) => {
+    botData = await BotModel.findOne();
 
-      if (sq.data === "enable_auto_del") {
-        botData.autodel = "enable";
-        await botData.save();
-        return bot.answerCallbackQuery(sq.id, { text: "Auto-delete enabled." });
-      }
+    if (q.data === "enable_auto_del") {
+      botData.autodel = "enable";
+      await botData.save();
+      return bot.answerCallbackQuery(q.id, { text: "Auto Delete Enabled" });
+    }
 
-      if (sq.data === "disable_auto_del") {
-        botData.autodel = "disable";
-        await botData.save();
-        return bot.answerCallbackQuery(sq.id, { text: "Auto-delete disabled." });
-      }
+    if (q.data === "disable_auto_del") {
+      botData.autodel = "disable";
+      await botData.save();
+      return bot.answerCallbackQuery(q.id, { text: "Auto Delete Disabled" });
+    }
 
-      if (sq.data === "enable_force") {
-        botData.forcesub = "enable";
-        await botData.save();
-        return bot.answerCallbackQuery(sq.id, { text: "Force Sub enabled." });
-      }
+    if (q.data === "enable_force") {
+      botData.forcesub = "enable";
+      await botData.save();
+      return bot.answerCallbackQuery(q.id, { text: "ForceSub Enabled" });
+    }
 
-      if (sq.data === "disable_force") {
-        botData.forcesub = "disable";
-        await botData.save();
-        return bot.answerCallbackQuery(sq.id, { text: "Force Sub disabled." });
-      }
+    if (q.data === "disable_force") {
+      botData.forcesub = "disable";
+      await botData.save();
+      return bot.answerCallbackQuery(q.id, { text: "ForceSub Disabled" });
+    }
 
-      if (sq.data === "manage_force_channels") {
-        // show current channels and instructions
-        const channels = (botData.forceChannels && botData.forceChannels.length) ? botData.forceChannels.join("\n") : "No channels configured.";
-        const text = `📌 Current forced channels:\n${channels}\n\nUse /forcesub add @channel or /forcesub remove @channel`;
-        return bot.sendMessage(sq.from.id, text);
-      }
-    } catch (err) {
-      console.error("Settings callback error:", err);
-      return bot.answerCallbackQuery(sq.id, { text: "Update failed." });
+    if (q.data === "manage_channels") {
+      const list =
+        botData.forceChannels.length === 0
+          ? "No channels added."
+          : botData.forceChannels.join("\n");
+
+      return bot.sendMessage(
+        q.from.id,
+        `📌 Current Channels:\n${list}\n\nUse commands:\n /forcesub add @channel\n /forcesub remove @channel\n /forcesub list`
+      );
     }
   });
-
 };
