@@ -314,7 +314,7 @@ Tech: NodeJS + MongoDB
     if (data === "OwnerInfo") {
       const OWNER = `
 <b>🌟 Owner Details 🌟</b>
-<b>Name:</b> Your Smile
+<b>Name:</b> <b>Your Smile</b>
 <b>Telegram:</b> @crunchyroll_hindi_dub_yt
 `;
       return bot.editMessageCaption(OWNER, { chat_id: chatId, message_id: messageId, ...menuButtons }).catch(async () => {
@@ -325,8 +325,14 @@ Tech: NodeJS + MongoDB
     if (data === "legal") {
       const LEGAL = `
 <b>📜 Legal Notice</b>
-Do not upload illegal or copyrighted content.
-You are responsible for your files.
+This bot acts solely as a <b>technical medium</b>.
+All content, links, and media shared through this bot belong to their respective <b>third-party owners</b>.
+
+🛑 The bot <b>does not host</b>, control, or claim ownership of any copyrighted material.
+Any access or redirection is provided strictly under <b>Fair Use</b> for educational and informational purposes.
+
+👤 Users are fully responsible for how they use this service.
+The developer shall not be held liable for any misuse, copyright infringement, or policy violations.
 `;
       return bot.editMessageCaption(LEGAL, { chat_id: chatId, message_id: messageId, ...menuButtons }).catch(async () => {
         return bot.sendMessage(chatId, LEGAL, menuButtons);
